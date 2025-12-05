@@ -5,11 +5,17 @@ TagManager:
   serializedVersion: 3
   tags:
   - CinemachineTarget
+  - canPickUp
+  - Journal
+  - Matches
+  - OccultBook
+  - StudyKey
+  - Battery
   layers:
   - Default
   - TransparentFX
   - Ignore Raycast
-  - 
+  - Pick Up
   - Water
   - UI
   - Interactable
