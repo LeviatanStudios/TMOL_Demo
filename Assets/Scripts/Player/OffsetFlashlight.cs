@@ -9,7 +9,7 @@ public class OffsetFlashlight : MonoBehaviour
     public GameObject FollowCam;
     public Light Flashlight;
     public TextMeshProUGUI WarningText;
-    public TaskManager taskManager; // Reference to TaskManager
+    public TaskManager taskManager;
 
     [Header("Battery Settings")]
     public int maxBatteries = 100;
@@ -24,14 +24,15 @@ public class OffsetFlashlight : MonoBehaviour
     public AudioClip BatteryPickupSound;
 
     private bool FlashLightIsOn = false;
-    private bool firstTimeFlashlightOn = false;  // Track first flashlight use
-    private bool firstTimePickupBattery = false; // Track first battery pickup
+    private bool firstTimeFlashlightOn = false;
+    private bool firstTimePickupBattery = false;
     private float drainTimer = 0f;
 
     void Start()
     {
         currentBatteries = 0;
         Flashlight.enabled = false;
+        FlashLightIsOn = false;
         if (WarningText != null)
             WarningText.text = "";
     }
@@ -46,8 +47,8 @@ public class OffsetFlashlight : MonoBehaviour
         if (Keyboard.current.fKey.wasPressedThisFrame)
             ToggleFlashlight();
 
-        // Drain battery if flashlight is on
-        if (FlashLightIsOn)
+        // Drain battery ONLY if flashlight is on AND has batteries
+        if (FlashLightIsOn && currentBatteries > 0)
             HandleBatteryDrain();
     }
 
@@ -59,33 +60,34 @@ public class OffsetFlashlight : MonoBehaviour
             {
                 Flashlight.enabled = true;
                 FlashLightIsOn = true;
+                drainTimer = 0f; // Reset timer when turning ON
                 Source.PlayOneShot(FlashLight_OnSound);
-
-                
             }
             else
             {
-                // Optionally: complete first-use flashlight task
+                // Tutorial: Complete task when player tries flashlight with no battery
                 if (!firstTimeFlashlightOn && taskManager != null)
                 {
                     taskManager.CompleteTask("Flashlight");
                     firstTimeFlashlightOn = true;
                 }
                 Source.PlayOneShot(NoBatterySound);
-                ShowWarning("Flashlight ran out of battery!");
+                ShowWarning("No batteries!");
             }
         }
         else
         {
             Flashlight.enabled = false;
             FlashLightIsOn = false;
+            drainTimer = 0f; // Reset timer when turning OFF
             Source.PlayOneShot(FlashLight_OffSound);
         }
     }
 
     void HandleBatteryDrain()
     {
-        drainTimer += Time.deltaTime;
+        drainTimer += Time.deltaTime * batteryDrainRate;
+
         if (drainTimer >= 1f)
         {
             currentBatteries--;
@@ -93,23 +95,18 @@ public class OffsetFlashlight : MonoBehaviour
 
             if (currentBatteries <= 0)
             {
+                currentBatteries = 0;
                 FlashLightIsOn = false;
                 Flashlight.enabled = false;
+                drainTimer = 0f;
                 Source.PlayOneShot(NoBatterySound);
                 ShowWarning("Flashlight ran out of battery!");
             }
         }
     }
 
-
-   
     public void AddBattery(int amount)
     {
-        int batteryCount = 0;
-
-        batteryCount += amount;
-        Debug.Log("BATTERY ADDED! Current: " + batteryCount);
-
         currentBatteries += amount;
         if (currentBatteries > maxBatteries)
             currentBatteries = maxBatteries;
@@ -117,7 +114,7 @@ public class OffsetFlashlight : MonoBehaviour
         Source.PlayOneShot(BatteryPickupSound);
         ShowWarning($"Battery collected! ({currentBatteries}/{maxBatteries})");
 
-        // ✅ Complete Task 3 on first battery pickup
+        // Tutorial: Complete task on first battery pickup
         if (!firstTimePickupBattery && taskManager != null)
         {
             taskManager.CompleteTask("CollectBattery");
@@ -128,7 +125,6 @@ public class OffsetFlashlight : MonoBehaviour
     void ShowWarning(string message)
     {
         if (WarningText == null) return;
-
         WarningText.text = message;
         StopAllCoroutines();
         StartCoroutine(HideWarningAfterSeconds(3f));
@@ -139,6 +135,4 @@ public class OffsetFlashlight : MonoBehaviour
         yield return new WaitForSeconds(seconds);
         WarningText.text = "";
     }
-
-
 }

@@ -1,19 +1,20 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 public class JumpScareTrigger : MonoBehaviour
 {
     [Header("Entity Settings")]
     public GameObject scareEntity;          // The monster/ghost
-    public Transform pointA;                // Start position
-    public Transform pointB;                // End position
+    [Tooltip("If empty, pointA and pointB will be used as fallback (in that order).")]
+    public List<Transform> points = new List<Transform>(); // flexible list of waypoints
     public float moveSpeed = 15f;
     public float rotationSpeed = 10f;
     public bool faceMovementDirection = true;
 
     [Header("Trigger Settings")]
     public bool triggerOnce = true;         // Only trigger once?
-    public bool disableAfterScare = true;   // Hide entity after reaching point B?
+    public bool disableAfterScare = true;   // Hide entity after reaching last point?
     public float disableDelay = 0.5f;       // Delay before hiding entity
 
     [Header("Audio")]
@@ -41,6 +42,11 @@ public class JumpScareTrigger : MonoBehaviour
     public string walkAnimTrigger = "Walk";
     public string idleAnimTrigger = "Idle";
 
+    // Backwards compatible single points (optional)
+    [Header("Legacy Points (optional, only used if 'points' is empty)")]
+    public Transform pointA;
+    public Transform pointB;
+
     private bool hasTriggered = false;
     private bool isMoving = false;
     private Camera playerCamera;
@@ -57,18 +63,25 @@ public class JumpScareTrigger : MonoBehaviour
         // Auto-setup audio source
         if (audioSource == null)
             audioSource = GetComponent<AudioSource>();
+
+        // If points list empty and legacy points set, populate fallback
+        if ((points == null || points.Count == 0) && pointA != null && pointB != null)
+        {
+            points = new List<Transform> { pointA, pointB };
+            // if there is a third legacy point, you can add it manually in inspector
+        }
     }
 
     void OnTriggerEnter(Collider other)
     {
-        if (other.CompareTag("Player"))
-        {
-            if (triggerOnce && hasTriggered) return;
-            if (isMoving) return;
-            Debug.Log("GOT TRIGGERED");
-            hasTriggered = true;
-            StartCoroutine(PlayJumpScare());
-        }
+        if (!other.CompareTag("Player")) return;
+
+        if (triggerOnce && hasTriggered) return;
+        if (isMoving) return;
+
+        Debug.Log("JumpScareTrigger: GOT TRIGGERED");
+        hasTriggered = true;
+        StartCoroutine(PlayJumpScare());
     }
 
     IEnumerator PlayJumpScare()
@@ -77,9 +90,9 @@ public class JumpScareTrigger : MonoBehaviour
         if (audioSource != null && scareSound != null)
             audioSource.PlayOneShot(scareSound);
 
-        // Freeze player if enabled
+        // Freeze player if enabled (start unfreeze coroutine so movement can happen separately)
         if (freezePlayer && playerMovementScript != null)
-            playerMovementScript.enabled = false;
+            StartCoroutine(HandlePlayerFreeze());
 
         // Start light flicker
         if (flickerLight != null)
@@ -89,101 +102,121 @@ public class JumpScareTrigger : MonoBehaviour
         if (enableCameraShake && playerCamera != null)
             StartCoroutine(CameraShake());
 
-        // Position entity at point A and show it
-        if (scareEntity != null && pointA != null)
+        // Position entity at first point and show it
+        if (scareEntity != null && points != null && points.Count > 0)
         {
-            scareEntity.transform.position = pointA.position;
-            scareEntity.transform.rotation = pointA.rotation;
+            Transform start = points[0];
+            if (start != null)
+            {
+                scareEntity.transform.position = start.position;
+                scareEntity.transform.rotation = start.rotation;
+            }
             scareEntity.SetActive(true);
 
             // Start walk animation
-            if (entityAnimator != null)
+            if (entityAnimator != null && !string.IsNullOrEmpty(walkAnimTrigger))
                 entityAnimator.SetTrigger(walkAnimTrigger);
 
-            // Move entity to point B
-            yield return StartCoroutine(MoveEntityToPointB());
+            // Move through all points
+            yield return StartCoroutine(MoveEntityThroughPoints());
         }
 
-        // Unfreeze player
-        if (freezePlayer && playerMovementScript != null)
+        // After movement is done, ensure idle animation and optionally disable
+        if (entityAnimator != null && !string.IsNullOrEmpty(idleAnimTrigger))
+            entityAnimator.SetTrigger(idleAnimTrigger);
+
+        if (disableAfterScare)
         {
-            yield return new WaitForSeconds(freezeDuration);
-            playerMovementScript.enabled = true;
+            yield return new WaitForSeconds(disableDelay);
+            if (scareEntity != null)
+                scareEntity.SetActive(false);
         }
     }
 
-    IEnumerator MoveEntityToPointB()
+    IEnumerator MoveEntityThroughPoints()
     {
-        if (pointB == null) yield break;
+        if (points == null || points.Count == 0) yield break;
+        if (scareEntity == null) yield break;
 
         isMoving = true;
         float footstepTimer = 0f;
 
-        // Face point B
-        if (faceMovementDirection)
+        // iterate through points sequentially (0..n-1), target is each subsequent point
+        for (int i = 1; i < points.Count; i++)
         {
-            Vector3 direction = (pointB.position - pointA.position).normalized;
-            if (direction != Vector3.zero)
-            {
-                Quaternion targetRotation = Quaternion.LookRotation(direction);
-                scareEntity.transform.rotation = targetRotation;
-            }
-        }
+            Transform target = points[i];
+            if (target == null) continue;
 
-        while (Vector3.Distance(scareEntity.transform.position, pointB.position) > 0.1f)
-        {
-            // Move towards point B
-            scareEntity.transform.position = Vector3.MoveTowards(
-                scareEntity.transform.position,
-                pointB.position,
-                moveSpeed * Time.deltaTime
-            );
-
-            // Optional: Smoothly rotate towards movement direction
+            // Optional immediate face to next target before moving
             if (faceMovementDirection)
             {
-                Vector3 direction = (pointB.position - scareEntity.transform.position).normalized;
-                if (direction != Vector3.zero)
+                Vector3 dir = (target.position - scareEntity.transform.position).normalized;
+                if (dir != Vector3.zero)
                 {
-                    Quaternion targetRotation = Quaternion.LookRotation(direction);
-                    scareEntity.transform.rotation = Quaternion.Slerp(
-                        scareEntity.transform.rotation,
-                        targetRotation,
-                        rotationSpeed * Time.deltaTime
-                    );
+                    Quaternion targetRotation = Quaternion.LookRotation(dir);
+                    scareEntity.transform.rotation = targetRotation;
                 }
             }
 
-            // Footstep sounds
-            if (footstepSound != null && audioSource != null)
+            while (Vector3.Distance(scareEntity.transform.position, target.position) > 0.1f)
             {
-                footstepTimer += Time.deltaTime;
-                if (footstepTimer >= footstepInterval)
+                // Move towards target
+                scareEntity.transform.position = Vector3.MoveTowards(
+                    scareEntity.transform.position,
+                    target.position,
+                    moveSpeed * Time.deltaTime
+                );
+
+                // Smoothly rotate towards movement direction
+                if (faceMovementDirection)
                 {
-                    audioSource.PlayOneShot(footstepSound, 0.5f);
-                    footstepTimer = 0f;
+                    Vector3 direction = (target.position - scareEntity.transform.position).normalized;
+                    if (direction != Vector3.zero)
+                    {
+                        Quaternion targetRotation = Quaternion.LookRotation(direction);
+                        scareEntity.transform.rotation = Quaternion.Slerp(
+                            scareEntity.transform.rotation,
+                            targetRotation,
+                            rotationSpeed * Time.deltaTime
+                        );
+                    }
                 }
+
+                // Footstep sounds
+                if (footstepSound != null && audioSource != null)
+                {
+                    footstepTimer += Time.deltaTime;
+                    if (footstepTimer >= footstepInterval)
+                    {
+                        audioSource.PlayOneShot(footstepSound, 0.5f);
+                        footstepTimer = 0f;
+                    }
+                }
+
+                yield return null;
             }
 
+            // small pause on each intermediate point (optional, tweak if needed)
             yield return null;
         }
 
         isMoving = false;
+        yield break;
+    }
 
-        // Trigger idle animation
-        if (entityAnimator != null)
-            entityAnimator.SetTrigger(idleAnimTrigger);
+    IEnumerator HandlePlayerFreeze()
+    {
+        if (playerMovementScript == null) yield break;
 
-        // Disable entity after delay
-        if (disableAfterScare)
-        {
-            yield return new WaitForSeconds(disableDelay);
-            scareEntity.SetActive(false);
-        }
+        playerMovementScript.enabled = false;
+        yield return new WaitForSeconds(freezeDuration);
+        playerMovementScript.enabled = true;
     }
 
     IEnumerator CameraShake()
     {
+        if (playerCamera == null) yield break;
+
         Vector3 originalPos = playerCamera.transform.localPosition;
         float elapsed = 0f;
 
@@ -210,9 +243,12 @@ public class JumpScareTrigger : MonoBehaviour
 
         while (elapsed < flickerDuration)
         {
+            // toggle
             flickerLight.enabled = !flickerLight.enabled;
-            yield return new WaitForSeconds(Random.Range(0.05f, 0.15f));
-            elapsed += 0.1f;
+            // choose a random short wait
+            float wait = Random.Range(0.05f, 0.15f);
+            yield return new WaitForSeconds(wait);
+            elapsed += wait;
         }
 
         flickerLight.enabled = originalState;
@@ -223,28 +259,43 @@ public class JumpScareTrigger : MonoBehaviour
     {
         // Draw trigger zone
         Gizmos.color = new Color(1f, 0f, 0f, 0.3f);
-        Gizmos.DrawCube(transform.position, GetComponent<Collider>()?.bounds.size ?? Vector3.one);
+        Collider c = GetComponent<Collider>();
+        if (c != null)
+            Gizmos.DrawCube(transform.position, c.bounds.size);
+        else
+            Gizmos.DrawCube(transform.position, Vector3.one);
 
-        // Draw point A
-        if (pointA != null)
+        // Draw points list
+        if (points != null && points.Count > 0)
         {
-            Gizmos.color = Color.green;
-            Gizmos.DrawWireSphere(pointA.position, 0.5f);
-            Gizmos.DrawLine(pointA.position, pointA.position + pointA.forward);
+            for (int i = 0; i < points.Count; i++)
+            {
+                if (points[i] == null) continue;
+                Gizmos.color = (i == 0) ? Color.green : (i == points.Count - 1 ? Color.red : Color.yellow);
+                Gizmos.DrawWireSphere(points[i].position, 0.25f);
+                if (i < points.Count - 1 && points[i + 1] != null)
+                    Gizmos.DrawLine(points[i].position, points[i + 1].position);
+            }
         }
-
-        // Draw point B
-        if (pointB != null)
+        else
         {
-            Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(pointB.position, 0.5f);
-        }
-
-        // Draw path
-        if (pointA != null && pointB != null)
-        {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawLine(pointA.position, pointB.position);
+            // fallback: draw legacy A/B points if present
+            if (pointA != null)
+            {
+                Gizmos.color = Color.green;
+                Gizmos.DrawWireSphere(pointA.position, 0.25f);
+                Gizmos.DrawLine(pointA.position, pointA.position + pointA.forward);
+            }
+            if (pointB != null)
+            {
+                Gizmos.color = Color.red;
+                Gizmos.DrawWireSphere(pointB.position, 0.25f);
+            }
+            if (pointA != null && pointB != null)
+            {
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawLine(pointA.position, pointB.position);
+            }
         }
     }
 }

@@ -1,67 +1,37 @@
 using System.Collections;
 using UnityEngine;
 
-public class FrontDoorLeft : MonoBehaviour, Interactable
+public class FrontDoorLeft : MonoBehaviour
 {
     private float openAngleLeft = -90f;
-    public float openSpeed = 8f;
-    private bool isOpen = true;
+    public float openSpeed = 2f;
 
     private Quaternion _closedRotation;
     private Quaternion _openRotation;
 
     [Header("Triggered Front Door")]
-    public bool isTrigger = false;
-
-    [SerializeField] private AudioSource doorOpenAudioSource = null;
-    [SerializeField] private float openDelay = 0;
 
     [Space(10)]
-    [SerializeField] private AudioSource doorCloseAudioSource = null;
-    [SerializeField] private float closeDelay = 0.3f;
+    [SerializeField] public AudioSource AudioSource;
+    [SerializeField] public AudioClip doorSlammed;
 
-    
+
 
     void Start()
     {
         _closedRotation = Quaternion.Euler(transform.eulerAngles + new Vector3(0, openAngleLeft, 0));
         _openRotation = transform.rotation;
-
     }
 
-    public void DoorTriggered(bool isTriggered)
+    public IEnumerator ToggleDoor(bool isTriggered)
     {
-        Debug.Log(isTriggered);
-        isTrigger = isTriggered;
+        Quaternion targetRotation = isTriggered ? _closedRotation : _openRotation;
 
-
-        if (isTrigger)
+        if (isTriggered)
         {
-            doorOpenAudioSource.PlayDelayed(openDelay);
-            StartCoroutine(ToggleDoor());
+            AudioSource.PlayOneShot(doorSlammed);
         }
 
-    }
-
-    // Update is called once per frame
-    public void Interact()
-    {
-        StartCoroutine(ToggleDoor());
-    }
-
-    private IEnumerator ToggleDoor()
-    {
-        Quaternion targetRotation = isOpen ? _closedRotation : _openRotation;
-        isOpen = !isOpen;
-
-        if (isOpen)
-        {
-            doorOpenAudioSource.PlayDelayed(openDelay);
-        }
-        else if (!isOpen)
-        {
-            doorCloseAudioSource.PlayDelayed(closeDelay);
-        }
 
         while (Quaternion.Angle(transform.rotation, targetRotation) > 0.1f)
         {
@@ -71,6 +41,5 @@ public class FrontDoorLeft : MonoBehaviour, Interactable
         }
 
         transform.rotation = targetRotation;
-
     }
 }

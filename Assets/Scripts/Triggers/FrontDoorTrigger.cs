@@ -7,16 +7,20 @@ public class FrontDoorTrigger : MonoBehaviour
     public TaskManager taskManager;
     public FrontDoorRight FrontDoorRight;
     public FrontDoorLeft FrontDoorLeft;
-
+    public AudioSource AudioSource;
+    public AudioClip AudioClip;
     
 
     private void OnTriggerEnter(Collider other)
     {
         if (taskManager != null && taskManager.IsCurrentTask("TryFrontDoor"))
         {
-            FrontDoorLeft.DoorTriggered(true);
-            FrontDoorRight.DoorTriggered(true);
+            StartCoroutine(FrontDoorRight.ToggleDoor(true));
+            StartCoroutine(FrontDoorLeft.ToggleDoor(true));
             taskManager.CompleteTask("TryFrontDoor");
+
+            AudioSource.PlayOneShot(AudioClip, 1f);
+
         }
     }
 }
