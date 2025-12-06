@@ -14,19 +14,28 @@ public class TaskWaypoint : MonoBehaviour
 
     private GameObject activeMarker;
     private Renderer[] renderers;
-    private Material[] originalMaterials;
+    private Material[][] originalMaterialArrays; // Store ALL materials per renderer
     private bool isGlowing = false;
     private TaskManager taskManager;
 
     void Start()
     {
         renderers = GetComponentsInChildren<Renderer>();
-        originalMaterials = new Material[renderers.Length];
 
+        // Store ALL original materials for each renderer
+        originalMaterialArrays = new Material[renderers.Length][];
         for (int i = 0; i < renderers.Length; i++)
         {
             if (renderers[i] != null)
-                originalMaterials[i] = renderers[i].material;
+            {
+                // Clone the materials array to avoid reference issues
+                Material[] mats = renderers[i].materials;
+                originalMaterialArrays[i] = new Material[mats.Length];
+                for (int j = 0; j < mats.Length; j++)
+                {
+                    originalMaterialArrays[i][j] = mats[j];
+                }
+            }
         }
 
         taskManager = FindFirstObjectByType<TaskManager>();
@@ -38,7 +47,6 @@ public class TaskWaypoint : MonoBehaviour
 
     void Update()
     {
-        // Auto-hide if task is no longer current
         if (taskManager != null && (activeMarker != null || isGlowing))
         {
             if (!taskManager.IsCurrentTask(taskID))
@@ -63,7 +71,6 @@ public class TaskWaypoint : MonoBehaviour
 
     public void ShowMarker(GameObject markerPrefab, Material glowMaterial)
     {
-        // Spawn arrow marker
         if (markerPrefab != null && activeMarker == null)
         {
             activeMarker = Instantiate(markerPrefab, transform.position + markerOffset, Quaternion.identity);
@@ -76,13 +83,11 @@ public class TaskWaypoint : MonoBehaviour
             }
         }
 
-        // Apply glow material
         if (glowMaterial != null && !isGlowing)
         {
             ApplyGlow(glowMaterial);
         }
 
-        // Enable custom effect
         if (customGlowEffect != null)
         {
             customGlowEffect.SetActive(true);
@@ -93,20 +98,17 @@ public class TaskWaypoint : MonoBehaviour
 
     public void HideMarker()
     {
-        // Remove arrow marker
         if (activeMarker != null)
         {
             Destroy(activeMarker);
             activeMarker = null;
         }
 
-        // Remove glow
         if (isGlowing)
         {
             RemoveGlow();
         }
 
-        // Disable custom effect
         if (customGlowEffect != null)
         {
             customGlowEffect.SetActive(false);
@@ -115,20 +117,30 @@ public class TaskWaypoint : MonoBehaviour
         Debug.Log($"Waypoint hidden for: {taskID}");
     }
 
+    public void OnObjectRead()
+    {
+        HideMarker();
+
+        if (taskManager != null)
+        {
+            taskManager.CompleteTask(taskID);
+        }
+    }
+
     private void ApplyGlow(Material glowMaterial)
     {
         isGlowing = true;
 
-        foreach (Renderer rend in renderers)
+        for (int i = 0; i < renderers.Length; i++)
         {
-            if (rend == null) continue;
+            if (renderers[i] == null || originalMaterialArrays[i] == null) continue;
 
-            // Add glow as additional material
-            Material[] mats = rend.materials;
-            Material[] newMats = new Material[mats.Length + 1];
-            mats.CopyTo(newMats, 0);
+            // Add glow material to existing materials
+            Material[] currentMats = originalMaterialArrays[i];
+            Material[] newMats = new Material[currentMats.Length + 1];
+            currentMats.CopyTo(newMats, 0);
             newMats[newMats.Length - 1] = glowMaterial;
-            rend.materials = newMats;
+            renderers[i].materials = newMats;
         }
 
         Debug.Log($"Glow applied to: {gameObject.name}");
@@ -140,9 +152,10 @@ public class TaskWaypoint : MonoBehaviour
 
         for (int i = 0; i < renderers.Length; i++)
         {
-            if (renderers[i] != null && i < originalMaterials.Length && originalMaterials[i] != null)
+            if (renderers[i] != null && originalMaterialArrays[i] != null)
             {
-                renderers[i].material = originalMaterials[i];
+                // Restore ALL original materials
+                renderers[i].materials = originalMaterialArrays[i];
             }
         }
 

@@ -22,7 +22,7 @@ public class PickupAndInspect : MonoBehaviour
     [SerializeField] private OffsetFlashlight flashlight;
 
     [Header("Settings")]
-    [SerializeField] private float pickupRange = 20f;
+    [SerializeField] private float pickupRange = 10f;
     [SerializeField] private float throwForce = 500f;
     [SerializeField] private float moveSmoothSpeed = 8f;
     [SerializeField] private float inspectRotationSpeed = 20f;
@@ -43,7 +43,6 @@ public class PickupAndInspect : MonoBehaviour
     private Quaternion targetRotation;
     private GameObject highlightedObj = null;
 
-    // Journal tracking
     private HashSet<string> readJournals = new HashSet<string>();
 
     void Start()
@@ -66,8 +65,8 @@ public class PickupAndInspect : MonoBehaviour
 
     void Update()
     {
-        HandlePickupInteraction();  // E key - pickup/collect
-        HandleReadInteraction();     // R key - read/inspect
+        HandlePickupInteraction();
+        HandleReadInteraction();
         HandleThrow();
         HandleUIHint();
         HandleCloseReading();
@@ -95,7 +94,6 @@ public class PickupAndInspect : MonoBehaviour
         {
             string tag = hit.transform.tag;
 
-            // Check if it's a readable item (journal or occult book)
             if (tag == "Journal" || tag == "OccultBook")
             {
                 if (tag == "OccultBook")
@@ -113,7 +111,6 @@ public class PickupAndInspect : MonoBehaviour
                     isReadable = true;
                 }
             }
-            // Check if it's a pickupable item
             else if (tag == "canPickUp" || tag == "Battery" || tag == "Matches" || tag == "StudyKey")
             {
                 currentHitObj = hit.transform.gameObject;
@@ -121,7 +118,6 @@ public class PickupAndInspect : MonoBehaviour
             }
         }
 
-        // Update hints
         if (currentHitObj != null)
         {
             if (isReadable)
@@ -206,21 +202,18 @@ public class PickupAndInspect : MonoBehaviour
     {
         if (Keyboard.current.rKey.wasPressedThisFrame)
         {
-            // If reading, close it
             if (isReading)
             {
                 CloseReading();
                 return;
             }
 
-            // If holding object, toggle inspect mode
             if (heldObj != null)
             {
                 ToggleInspectMode();
                 return;
             }
 
-            // If not holding anything, try to read
             RaycastHit hit;
             if (Physics.Raycast(playerCamera.transform.position, playerCamera.transform.forward, out hit, pickupRange))
             {
@@ -237,7 +230,6 @@ public class PickupAndInspect : MonoBehaviour
             }
         }
 
-        // Q key for auto-rotate while inspecting
         if (isInspecting && heldObj != null && Keyboard.current.qKey.isPressed)
         {
             targetRotation *= Quaternion.Euler(0, autoRotateSpeed * Time.fixedDeltaTime, 0);
@@ -304,17 +296,20 @@ public class PickupAndInspect : MonoBehaviour
         JournalPickup journal = journalObj.GetComponent<JournalPickup>();
         if (journal == null || JournalUI.Instance == null) return;
 
-        // Check if this journal has a required task and if it's current
-        if (!string.IsNullOrEmpty(journal.journalID))
+        // Check if this is first-time read and task is required
+        bool isFirstRead = !readJournals.Contains(journal.journalID);
+
+        // Only block if it's the first read AND task can't be completed yet
+        if (isFirstRead && !string.IsNullOrEmpty(journal.journalID))
         {
-            // Only complete task if it's the current one
             if (!taskManager.CanCompleteTask(journal.journalID))
             {
                 Debug.Log($"Cannot read {journal.journalTitle} yet - complete current task first!");
-                return; // Block reading if not the right task
+                return;
             }
         }
 
+        // Enter reading mode and show journal
         EnterReadingMode();
 
         JournalUI.Instance.ShowJournal(
@@ -323,8 +318,8 @@ public class PickupAndInspect : MonoBehaviour
             journal.journalImage
         );
 
-        // Complete task on first read
-        if (!string.IsNullOrEmpty(journal.journalID) && !readJournals.Contains(journal.journalID))
+        // Complete task only on first read
+        if (isFirstRead && !string.IsNullOrEmpty(journal.journalID))
         {
             readJournals.Add(journal.journalID);
             taskManager?.CompleteTask(journal.journalID);
@@ -345,20 +340,18 @@ public class PickupAndInspect : MonoBehaviour
             return;
         }
 
-        // Check if this book's task is current
-        if (!string.IsNullOrEmpty(occultBook.bookID))
+        // Only block first read if task can't be completed
+        if (!occultBook.HasBeenRead && !string.IsNullOrEmpty(occultBook.bookID))
         {
             if (!taskManager.CanCompleteTask(occultBook.bookID))
             {
-                Debug.Log($"Cannot read {occultBook.bookTitle} yet - complete current task first!");
+                Debug.Log("Cannot read this book yet - complete current task first!");
                 return;
             }
         }
 
-        EnterReadingMode();
         occultBook.TryReadBook();
-
-        Debug.Log($"Reading occult book: {occultBook.bookTitle}");
+        Debug.Log("Reading occult book...");
     }
 
     private void EnterReadingMode()
@@ -374,12 +367,11 @@ public class PickupAndInspect : MonoBehaviour
     }
     #endregion
 
-    #region Collection Methods (with task protection)
+    #region Collection Methods
     private void CollectBattery(GameObject batteryObj)
     {
         BatteryPickup batteryPickup = batteryObj.GetComponent<BatteryPickup>();
 
-        // Check if battery collection is the current task
         string taskID = batteryPickup?.taskID;
         if (!string.IsNullOrEmpty(taskID) && !taskManager.CanCompleteTask(taskID))
         {
@@ -392,7 +384,6 @@ public class PickupAndInspect : MonoBehaviour
         if (flashlight != null)
             flashlight.AddBattery(amount);
 
-        // Complete task if it's the current one
         if (!string.IsNullOrEmpty(taskID))
         {
             taskManager?.CompleteTask(taskID);
@@ -432,7 +423,6 @@ public class PickupAndInspect : MonoBehaviour
             return;
         }
 
-        // Check task protection
         if (!taskManager.CanCompleteTask("GetStudyKey"))
         {
             Debug.Log("Can't collect this yet - complete current task first!");
@@ -450,7 +440,6 @@ public class PickupAndInspect : MonoBehaviour
     {
         if (!pickObj.TryGetComponent(out Rigidbody rb)) return;
 
-        // Check if this pickup has a required task
         TaskItem taskItem = pickObj.GetComponent<TaskItem>();
         if (taskItem != null && !string.IsNullOrEmpty(taskItem.taskID))
         {
@@ -473,7 +462,6 @@ public class PickupAndInspect : MonoBehaviour
             foreach (var oCol in heldColliders)
                 Physics.IgnoreCollision(pCol, oCol, true);
 
-        // Complete task if assigned
         if (taskItem != null && !string.IsNullOrEmpty(taskItem.taskID))
         {
             taskManager?.CompleteTask(taskItem.taskID);

@@ -20,25 +20,48 @@ public class PlayerMovement : MonoBehaviour
     private float xRot;
     private bool isSprinting;
 
+    // Freeze system
+    private bool isFrozen = true; // Start frozen
+    public bool IsFrozen => isFrozen;
+
+    private void Start()
+    {
+        sensitivity = PlayerPrefs.GetFloat("Sensitivity", 10f);
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+    }
+
     private void Update()
     {
         if (Keyboard.current == null || Mouse.current == null) return;
 
-        // ===== Movement Input =====
+        // Still allow looking around when frozen
+        HandleMouseLook();
+
+        // Block movement input if frozen
+        if (isFrozen)
+        {
+            movementInput = Vector3.zero;
+            return;
+        }
+
+        // Movement Input
         float h = Keyboard.current.aKey.isPressed ? -1 :
                   Keyboard.current.dKey.isPressed ? 1 : 0;
         float v = Keyboard.current.wKey.isPressed ? 1 :
                   Keyboard.current.sKey.isPressed ? -1 : 0;
+
         movementInput = new Vector3(h, 0f, v).normalized;
 
-        // ===== Sprint =====
+        // Sprint
         isSprinting = Keyboard.current.leftShiftKey.isPressed && stamina.CanSprint();
+    }
 
-        // ===== Mouse Input =====
+    private void HandleMouseLook()
+    {
         float mouseX = Mouse.current.delta.x.ReadValue() * sensitivity * Time.deltaTime;
         float mouseY = Mouse.current.delta.y.ReadValue() * sensitivity * Time.deltaTime;
 
-        // Apply camera rotation
         xRot -= mouseY;
         xRot = Mathf.Clamp(xRot, -90f, 90f);
         playerCamera.localRotation = Quaternion.Euler(xRot, 0f, 0f);
@@ -47,27 +70,23 @@ public class PlayerMovement : MonoBehaviour
 
     private void FixedUpdate()
     {
-        MovePlayer();
+        if (!isFrozen)
+        {
+            MovePlayer();
+        }
     }
 
     private void MovePlayer()
     {
-        // Determine current speed
         float speed = isSprinting ? sprintSpeed : walkSpeed;
-
-        // Transform local movement to world space
         Vector3 move = transform.TransformDirection(movementInput) * speed;
-
-        // Apply movement while preserving Y velocity
         rb.linearVelocity = new Vector3(move.x, rb.linearVelocity.y, move.z);
 
-        // Handle stamina
         if (isSprinting && movementInput.magnitude > 0.1f)
             stamina.ConsumeStamina();
         else
             stamina.RegenStamina();
 
-        // Jump
         if (Keyboard.current.spaceKey.wasPressedThisFrame && IsGrounded())
         {
             rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
@@ -77,5 +96,20 @@ public class PlayerMovement : MonoBehaviour
     private bool IsGrounded()
     {
         return Physics.Raycast(transform.position, Vector3.down, 0.25f);
+    }
+
+    // Call this to unfreeze player
+    public void UnfreezePlayer()
+    {
+        isFrozen = false;
+        Debug.Log("Player unfrozen!");
+    }
+
+    // Call this to freeze player
+    public void FreezePlayer()
+    {
+        isFrozen = true;
+        movementInput = Vector3.zero;
+        Debug.Log("Player frozen!");
     }
 }

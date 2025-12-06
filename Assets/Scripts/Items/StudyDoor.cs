@@ -1,32 +1,50 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using System.Collections;
 
 public class StudyDoor : MonoBehaviour
 {
     [Header("References")]
     public TaskManager taskManager;
-    public Animator doorAnimator; // Optional: for door animation
-    public AudioSource audioSource;
-    public AudioClip unlockSound;
-    public AudioClip lockedSound;
 
-    [Header("Settings")]
-    public string unlockTaskName = "UnlockStudy";
+    [Header("Door Settings")]
+    public float openAngle = 90f;
+    public float openSpeed = 8f;
     public float interactRange = 3f;
+
+    [Header("Task Settings")]
+    public string unlockTaskName = "UnlockStudy";
+    public string requiredTaskID1 = "ReadFinalJournal";
+    public string requiredTaskID2 = "UnlockStudy";
+
+    [Header("Audio")]
+    [SerializeField] private AudioSource doorOpenAudioSource;
+    [SerializeField] private float openDelay = 0f;
+    [Space(10)]
+    [SerializeField] private AudioSource doorCloseAudioSource;
+    [SerializeField] private float closeDelay = 0.3f;
+    [Space(10)]
+    [SerializeField] private AudioSource lockedAudioSource;
 
     private bool isUnlocked = false;
     private bool isOpen = false;
-    private static bool playerHasKey = false; // Static so it persists
+    private static bool playerHasKey = false;
+
+    private Quaternion _closedRotation;
+    private Quaternion _openRotation;
+    private Coroutine _currentCoroutine;
 
     void Start()
     {
         if (taskManager == null)
             taskManager = FindFirstObjectByType<TaskManager>();
+
+        _closedRotation = transform.rotation;
+        _openRotation = Quaternion.Euler(transform.eulerAngles + new Vector3(0, openAngle, 0));
     }
 
     void Update()
     {
-        // Check for interaction
         if (Keyboard.current.eKey.wasPressedThisFrame)
         {
             TryInteract();
@@ -35,12 +53,22 @@ public class StudyDoor : MonoBehaviour
 
     void TryInteract()
     {
-        // Check if player is close enough
         GameObject player = GameObject.FindGameObjectWithTag("Player");
         if (player == null) return;
 
         float distance = Vector3.Distance(transform.position, player.transform.position);
         if (distance > interactRange) return;
+
+        // Check if current task is ReadFinalJournal OR UnlockStudy
+        bool canInteract = taskManager.IsCurrentTask(requiredTaskID1) ||
+                           taskManager.IsCurrentTask(requiredTaskID2);
+
+        if (!isUnlocked && !canInteract)
+        {
+            PlayLockedSound();
+            Debug.Log("Complete other tasks first.");
+            return;
+        }
 
         if (!isUnlocked)
         {
@@ -50,55 +78,75 @@ public class StudyDoor : MonoBehaviour
             }
             else
             {
-                // Door is locked and player has no key
-                if (audioSource != null && lockedSound != null)
-                    audioSource.PlayOneShot(lockedSound);
-
+                PlayLockedSound();
                 Debug.Log("The door is locked. You need a key.");
             }
         }
         else
         {
-            // Door is unlocked, toggle open/close
             ToggleDoor();
         }
+    }
+
+    void PlayLockedSound()
+    {
+        if (lockedAudioSource != null)
+            lockedAudioSource.Play();
     }
 
     void UnlockDoor()
     {
         isUnlocked = true;
 
-        if (audioSource != null && unlockSound != null)
-            audioSource.PlayOneShot(unlockSound);
-
-        // Complete the task
         if (taskManager != null)
         {
             taskManager.CompleteTask(unlockTaskName);
         }
 
         Debug.Log("Door unlocked!");
-
-        // Automatically open after unlocking
         ToggleDoor();
     }
 
     void ToggleDoor()
     {
-        isOpen = !isOpen;
-
-        if (doorAnimator != null)
+        if (_currentCoroutine != null)
         {
-            doorAnimator.SetBool("IsOpen", isOpen);
+            StopCoroutine(_currentCoroutine);
+        }
+
+        _currentCoroutine = StartCoroutine(AnimateDoor());
+    }
+
+    private IEnumerator AnimateDoor()
+    {
+        isOpen = !isOpen;
+        Quaternion targetRotation = isOpen ? _openRotation : _closedRotation;
+
+        // Stop any currently playing door audio
+        if (doorOpenAudioSource != null) doorOpenAudioSource.Stop();
+        if (doorCloseAudioSource != null) doorCloseAudioSource.Stop();
+
+        if (isOpen)
+        {
+            if (doorOpenAudioSource != null)
+                doorOpenAudioSource.PlayDelayed(openDelay);
         }
         else
         {
-            // Simple rotation if no animator
-            transform.rotation = Quaternion.Euler(0, isOpen ? 90f : 0f, 0f);
+            if (doorCloseAudioSource != null)
+                doorCloseAudioSource.PlayDelayed(closeDelay);
         }
+
+        while (Quaternion.Angle(transform.rotation, targetRotation) > 0.1f)
+        {
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * openSpeed);
+            yield return null;
+        }
+
+        transform.rotation = targetRotation;
+        _currentCoroutine = null;
     }
 
-    // Call this when player picks up the key
     public static void GiveKeyToPlayer()
     {
         playerHasKey = true;

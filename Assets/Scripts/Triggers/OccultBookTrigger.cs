@@ -1,36 +1,39 @@
 using UnityEngine;
 using TMPro;
+using System.Collections;
 
 public class OccultBook : MonoBehaviour
 {
     [Header("Book Info")]
-    public string bookTitle = "Unknown Tome";
-    public string bookID; // For task completion
-    public bool isTargetBook = false; // Set true for "The Patriarch's Burden"
+    public string bookID;
+    public bool isTargetBook = false;
 
-    [Header("Book Content")]
-    [TextArea(5, 15)]
-    public string bookContent; // The text content of the book
-    public Sprite bookImage; // Optional image for the book
+    [Header("Secret Panel UI")]
+    [SerializeField] private GameObject secretPanel;
+    [SerializeField] private TextMeshProUGUI secretTitleText;
+    [SerializeField] private TextMeshProUGUI secretContentText;
+    [SerializeField] private float panelDisplayTime = 5f;
+
+    [Header("Secret Message")]
+    [SerializeField] private string secretTitle = "The Patriarch's Burden";
+    [SerializeField] private string secretContent = "The key is revealed.\nGo find it.";
 
     [Header("Visual Feedback")]
-    public GameObject hiddenTitleUI; // World-space canvas with title
-    public TextMeshProUGUI titleText;
-    public Material revealedMaterial; // Optional: glowing material when revealed
+    public Material revealedMaterial;
 
     [Header("References")]
     public OffsetFlashlight flashlight;
     public TaskManager taskManager;
 
     [Header("Key Reveal")]
-    public StudyKey keyToReveal; // Assign the Study Key object here
+    public StudyKey keyToReveal;
 
     private bool isRevealed = false;
     private bool hasBeenRead = false;
     private Renderer bookRenderer;
     private Material originalMaterial;
+    private Coroutine hidePanelCoroutine;
 
-    // Public accessors
     public bool IsRevealed => isRevealed;
     public bool IsTargetBook => isTargetBook;
     public bool HasBeenRead => hasBeenRead;
@@ -41,10 +44,9 @@ public class OccultBook : MonoBehaviour
         if (bookRenderer != null)
             originalMaterial = bookRenderer.material;
 
-        if (hiddenTitleUI != null)
-            hiddenTitleUI.SetActive(false);
+        if (secretPanel != null)
+            secretPanel.SetActive(false);
 
-        // Auto-find references if not assigned
         if (flashlight == null)
             flashlight = FindFirstObjectByType<OffsetFlashlight>();
         if (taskManager == null)
@@ -93,17 +95,8 @@ public class OccultBook : MonoBehaviour
 
         isRevealed = true;
 
-        if (hiddenTitleUI != null)
-        {
-            hiddenTitleUI.SetActive(true);
-            if (titleText != null)
-                titleText.text = bookTitle;
-        }
-
         if (revealedMaterial != null && bookRenderer != null)
             bookRenderer.material = revealedMaterial;
-
-        Debug.Log($"Book revealed: {bookTitle}");
     }
 
     void HideBook()
@@ -112,17 +105,10 @@ public class OccultBook : MonoBehaviour
 
         isRevealed = false;
 
-        if (hiddenTitleUI != null)
-            hiddenTitleUI.SetActive(false);
-
         if (originalMaterial != null && bookRenderer != null)
             bookRenderer.material = originalMaterial;
     }
 
-    /// <summary>
-    /// Called when player presses E on the book while it's revealed.
-    /// Shows the book content UI.
-    /// </summary>
     public bool TryReadBook()
     {
         if (!isRevealed)
@@ -131,30 +117,25 @@ public class OccultBook : MonoBehaviour
             return false;
         }
 
-        // Show book content in UI
-        if (JournalUI.Instance != null)
-        {
-            JournalUI.Instance.ShowJournal(bookTitle, bookContent, bookImage);
-        }
-
         // Handle first-time reading
         if (!hasBeenRead)
         {
             hasBeenRead = true;
 
-            // Complete task if this is the target book
             if (isTargetBook && taskManager != null)
             {
                 taskManager.CompleteTask("SolveBookPuzzle");
                 Debug.Log("Found The Patriarch's Burden!");
 
-                // Reveal the hidden key!
+                // Show secret panel
+                ShowSecretPanel();
+
+                // Reveal the hidden key
                 if (keyToReveal != null)
                 {
                     keyToReveal.SetRevealed(true);
                 }
             }
-            // Complete task by bookID for non-target books
             else if (!string.IsNullOrEmpty(bookID) && taskManager != null)
             {
                 taskManager.CompleteTask(bookID);
@@ -163,5 +144,45 @@ public class OccultBook : MonoBehaviour
         }
 
         return true;
+    }
+
+    void ShowSecretPanel()
+    {
+        if (secretPanel == null) return;
+
+        if (secretTitleText != null)
+            secretTitleText.text = secretTitle;
+
+        if (secretContentText != null)
+            secretContentText.text = secretContent;
+
+        secretPanel.SetActive(true);
+
+        if (hidePanelCoroutine != null)
+            StopCoroutine(hidePanelCoroutine);
+
+        hidePanelCoroutine = StartCoroutine(HideSecretPanelAfterDelay());
+    }
+
+    IEnumerator HideSecretPanelAfterDelay()
+    {
+        yield return new WaitForSeconds(panelDisplayTime);
+
+        if (secretPanel != null)
+            secretPanel.SetActive(false);
+
+        hidePanelCoroutine = null;
+    }
+
+    public void HideSecretPanel()
+    {
+        if (hidePanelCoroutine != null)
+        {
+            StopCoroutine(hidePanelCoroutine);
+            hidePanelCoroutine = null;
+        }
+
+        if (secretPanel != null)
+            secretPanel.SetActive(false);
     }
 }

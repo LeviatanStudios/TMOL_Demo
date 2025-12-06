@@ -10,11 +10,12 @@ public class OffsetFlashlight : MonoBehaviour
     public Light Flashlight;
     public TextMeshProUGUI WarningText;
     public TaskManager taskManager;
+    public PlayerMovement playerMovement; // Add this reference
 
     [Header("Battery Settings")]
     public int maxBatteries = 100;
     public int currentBatteries;
-    public float batteryDrainRate = 1f; // units per second
+    public float batteryDrainRate = 1f;
 
     [Header("Audio")]
     public AudioSource Source;
@@ -33,21 +34,23 @@ public class OffsetFlashlight : MonoBehaviour
         currentBatteries = 0;
         Flashlight.enabled = false;
         FlashLightIsOn = false;
+
         if (WarningText != null)
             WarningText.text = "";
+
+        // Find PlayerMovement if not assigned
+        if (playerMovement == null)
+            playerMovement = FindFirstObjectByType<PlayerMovement>();
     }
 
     void Update()
     {
-        // Follow camera
         transform.position = FollowCam.transform.position;
         transform.rotation = FollowCam.transform.rotation;
 
-        // Toggle flashlight
         if (Keyboard.current.fKey.wasPressedThisFrame)
             ToggleFlashlight();
 
-        // Drain battery ONLY if flashlight is on AND has batteries
         if (FlashLightIsOn && currentBatteries > 0)
             HandleBatteryDrain();
     }
@@ -60,17 +63,27 @@ public class OffsetFlashlight : MonoBehaviour
             {
                 Flashlight.enabled = true;
                 FlashLightIsOn = true;
-                drainTimer = 0f; // Reset timer when turning ON
+                drainTimer = 0f;
                 Source.PlayOneShot(FlashLight_OnSound);
             }
             else
             {
-                // Tutorial: Complete task when player tries flashlight with no battery
-                if (!firstTimeFlashlightOn && taskManager != null)
+                // First time pressing F with no battery - complete tutorial task and unfreeze
+                if (!firstTimeFlashlightOn)
                 {
-                    taskManager.CompleteTask("Flashlight");
                     firstTimeFlashlightOn = true;
+
+                    // Complete task
+                    if (taskManager != null)
+                        taskManager.CompleteTask("Flashlight");
+
+                    // Unfreeze player
+                    if (playerMovement != null)
+                        playerMovement.UnfreezePlayer();
+
+                    Debug.Log("Tutorial complete - Player unfrozen!");
                 }
+
                 Source.PlayOneShot(NoBatterySound);
                 ShowWarning("No batteries!");
             }
@@ -79,7 +92,7 @@ public class OffsetFlashlight : MonoBehaviour
         {
             Flashlight.enabled = false;
             FlashLightIsOn = false;
-            drainTimer = 0f; // Reset timer when turning OFF
+            drainTimer = 0f;
             Source.PlayOneShot(FlashLight_OffSound);
         }
     }
@@ -114,7 +127,6 @@ public class OffsetFlashlight : MonoBehaviour
         Source.PlayOneShot(BatteryPickupSound);
         ShowWarning($"Battery collected! ({currentBatteries}/{maxBatteries})");
 
-        // Tutorial: Complete task on first battery pickup
         if (!firstTimePickupBattery && taskManager != null)
         {
             taskManager.CompleteTask("CollectBattery");
