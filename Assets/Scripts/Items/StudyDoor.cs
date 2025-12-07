@@ -34,6 +34,8 @@ public class StudyDoor : MonoBehaviour
     private Quaternion _openRotation;
     private Coroutine _currentCoroutine;
 
+
+
     void Start()
     {
         if (taskManager == null)
@@ -151,6 +153,11 @@ public class StudyDoor : MonoBehaviour
     {
         playerHasKey = true;
         Debug.Log("Player now has the Study Key!");
+    }
+
+    public void DoorSlammed()
+    {
+        StartCoroutine(AnimateDoor());
     }
 
     public static bool PlayerHasKey => playerHasKey;

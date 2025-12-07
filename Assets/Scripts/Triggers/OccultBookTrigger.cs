@@ -12,7 +12,6 @@ public class OccultBook : MonoBehaviour
     [SerializeField] private GameObject secretPanel;
     [SerializeField] private TextMeshProUGUI secretTitleText;
     [SerializeField] private TextMeshProUGUI secretContentText;
-    [SerializeField] private float panelDisplayTime = 5f;
 
     [Header("Secret Message")]
     [SerializeField] private string secretTitle = "The Patriarch's Burden";
@@ -30,13 +29,14 @@ public class OccultBook : MonoBehaviour
 
     private bool isRevealed = false;
     private bool hasBeenRead = false;
+    private bool isCurrentlyReading = false;
     private Renderer bookRenderer;
     private Material originalMaterial;
-    private Coroutine hidePanelCoroutine;
 
     public bool IsRevealed => isRevealed;
     public bool IsTargetBook => isTargetBook;
     public bool HasBeenRead => hasBeenRead;
+    public bool IsCurrentlyReading => isCurrentlyReading;
 
     void Start()
     {
@@ -117,6 +117,8 @@ public class OccultBook : MonoBehaviour
             return false;
         }
 
+        isCurrentlyReading = true;
+
         // Handle first-time reading
         if (!hasBeenRead)
         {
@@ -142,8 +144,29 @@ public class OccultBook : MonoBehaviour
                 Debug.Log($"Completed book task: {bookID}");
             }
         }
+        else
+        {
+            // Re-reading the book - show panel again if it's the target book
+            if (isTargetBook)
+            {
+                ShowSecretPanel();
+            }
+        }
 
         return true;
+    }
+
+    /// <summary>
+    /// Called by PickupAndInspect when player closes the book with R or Escape
+    /// </summary>
+    public void CloseBook()
+    {
+        isCurrentlyReading = false;
+
+        // Hide the secret panel immediately
+        HideSecretPanel();
+
+        Debug.Log("Book closed.");
     }
 
     void ShowSecretPanel()
@@ -157,31 +180,10 @@ public class OccultBook : MonoBehaviour
             secretContentText.text = secretContent;
 
         secretPanel.SetActive(true);
-
-        if (hidePanelCoroutine != null)
-            StopCoroutine(hidePanelCoroutine);
-
-        hidePanelCoroutine = StartCoroutine(HideSecretPanelAfterDelay());
-    }
-
-    IEnumerator HideSecretPanelAfterDelay()
-    {
-        yield return new WaitForSeconds(panelDisplayTime);
-
-        if (secretPanel != null)
-            secretPanel.SetActive(false);
-
-        hidePanelCoroutine = null;
     }
 
     public void HideSecretPanel()
     {
-        if (hidePanelCoroutine != null)
-        {
-            StopCoroutine(hidePanelCoroutine);
-            hidePanelCoroutine = null;
-        }
-
         if (secretPanel != null)
             secretPanel.SetActive(false);
     }

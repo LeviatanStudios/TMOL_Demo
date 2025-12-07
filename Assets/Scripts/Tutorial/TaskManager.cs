@@ -17,19 +17,7 @@ public class TaskManager : MonoBehaviour
     [Header("Tutorial UI")]
     public TutorialManager tutorialManager;
 
-    [Header("Waypoint Settings")]
-    [Tooltip("Prefab for the floating marker (arrow)")]
-    public GameObject waypointMarkerPrefab;
-
-    [Tooltip("Glow material to apply to task objects")]
-    public Material glowMaterial;
-
-    [Tooltip("Show waypoint markers")]
-    public bool showWaypoints = true;
-
     private Task currentTask;
-    private List<TaskWaypoint> registeredWaypoints = new List<TaskWaypoint>();
-    private TaskWaypoint activeWaypoint;
 
     void Start()
     {
@@ -46,67 +34,18 @@ public class TaskManager : MonoBehaviour
 
     private void UpdateCurrentTask()
     {
-        // Hide previous waypoint
-        if (activeWaypoint != null)
-        {
-            activeWaypoint.HideMarker();
-            activeWaypoint = null;
-        }
-
         // Find next incomplete task
         currentTask = tasks.Find(t => !t.isCompleted);
 
         if (currentTask != null)
         {
             tutorialManager?.ShowPersistent(currentTask.tutorialMessage);
-
-            // Show waypoint for current task
-            if (showWaypoints)
-            {
-                ShowWaypointForTask(currentTask.taskName);
-            }
+            Debug.Log($"Current task: {currentTask.taskName}");
         }
         else
         {
             tutorialManager?.Clear();
-        }
-    }
-
-    private void ShowWaypointForTask(string taskName)
-    {
-        // Find waypoint matching this task
-        TaskWaypoint waypoint = registeredWaypoints.Find(w => w != null && w.taskID == taskName);
-
-        if (waypoint != null)
-        {
-            waypoint.ShowMarker(waypointMarkerPrefab, glowMaterial);
-            activeWaypoint = waypoint;
-            Debug.Log($"Showing waypoint for task: {taskName}");
-        }
-    }
-
-    public void RegisterWaypoint(TaskWaypoint waypoint)
-    {
-        if (!registeredWaypoints.Contains(waypoint))
-        {
-            registeredWaypoints.Add(waypoint);
-
-            // If this waypoint is for current task, show it
-            if (currentTask != null && waypoint.taskID == currentTask.taskName && showWaypoints)
-            {
-                waypoint.ShowMarker(waypointMarkerPrefab, glowMaterial);
-                activeWaypoint = waypoint;
-            }
-        }
-    }
-
-    public void UnregisterWaypoint(TaskWaypoint waypoint)
-    {
-        registeredWaypoints.Remove(waypoint);
-
-        if (activeWaypoint == waypoint)
-        {
-            activeWaypoint = null;
+            Debug.Log("All tasks completed!");
         }
     }
 
@@ -145,21 +84,8 @@ public class TaskManager : MonoBehaviour
         return currentTask?.taskName ?? "None";
     }
 
-    /// <summary>
-    /// Toggle waypoint visibility
-    /// </summary>
-    public void SetWaypointsVisible(bool visible)
+    public Task GetCurrentTask()
     {
-        showWaypoints = visible;
-
-        if (visible && currentTask != null)
-        {
-            ShowWaypointForTask(currentTask.taskName);
-        }
-        else if (activeWaypoint != null)
-        {
-            activeWaypoint.HideMarker();
-            activeWaypoint = null;
-        }
+        return currentTask;
     }
 }

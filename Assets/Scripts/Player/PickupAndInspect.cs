@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -20,9 +21,19 @@ public class PickupAndInspect : MonoBehaviour
     [Header("Task & Item References")]
     [SerializeField] private TaskManager taskManager;
     [SerializeField] private OffsetFlashlight flashlight;
+    [SerializeField] private GameObject tiyanak;
+
+    [Header("Final Journal Camera Animation")]
+    [SerializeField] private GameObject finalJournalFocusObject;
+    [SerializeField] private float cameraAnimationDuration = 2f;
+    [SerializeField] private float cameraReturnDuration = 1.5f;
+    [SerializeField] private AnimationCurve cameraAnimationCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
+    [SerializeField] private float delayBeforeReturn = 0.5f;
+    [SerializeField] private UnityEngine.Events.UnityEvent onFinalJournalAnimationComplete;
+    [SerializeField] private UnityEngine.Events.UnityEvent onCameraReturnComplete;
 
     [Header("Settings")]
-    [SerializeField] private float pickupRange = 10f;
+    [SerializeField] private float pickupRange = 2f;
     [SerializeField] private float throwForce = 500f;
     [SerializeField] private float moveSmoothSpeed = 8f;
     [SerializeField] private float inspectRotationSpeed = 20f;
@@ -37,13 +48,30 @@ public class PickupAndInspect : MonoBehaviour
     private bool isReading = false;
     public bool IsReading => isReading;
 
+    // Track what type of reading we're in
+    private bool isReadingJournal = false;
+    private bool isReadingOccultBook = false;
+    private OccultBook currentOccultBook = null;
+
     private bool canDrop = true;
     private int pickupLayer;
     private Collider[] playerColliders;
     private Quaternion targetRotation;
     private GameObject highlightedObj = null;
 
+    public StudyDoor studyDoor;
+
     private HashSet<string> readJournals = new HashSet<string>();
+
+    // Final journal camera animation tracking
+    private bool justReadFinalJournal = false;
+    private bool isCameraAnimating = false;
+    public bool IsCameraAnimating => isCameraAnimating;
+    private bool hasFinalSequencePlayed = false;
+
+    // Store original camera rotation for return
+    private Quaternion originalCameraRotation;
+    private Animator focusObjectAnimator;
 
     void Start()
     {
@@ -55,6 +83,10 @@ public class PickupAndInspect : MonoBehaviour
         if (flashlight == null)
             flashlight = FindFirstObjectByType<OffsetFlashlight>();
 
+        // Cache the animator if focus object exists
+        if (finalJournalFocusObject != null)
+            focusObjectAnimator = finalJournalFocusObject.GetComponent<Animator>();
+
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
 
@@ -65,6 +97,9 @@ public class PickupAndInspect : MonoBehaviour
 
     void Update()
     {
+        // Block all interactions during camera animation
+        if (isCameraAnimating) return;
+
         HandlePickupInteraction();
         HandleReadInteraction();
         HandleThrow();
@@ -74,6 +109,7 @@ public class PickupAndInspect : MonoBehaviour
 
     void FixedUpdate()
     {
+        if (isCameraAnimating) return;
         HandleHeldObject();
     }
 
@@ -89,6 +125,7 @@ public class PickupAndInspect : MonoBehaviour
         RaycastHit hit;
         GameObject currentHitObj = null;
         bool isReadable = false;
+        bool isPickupable = false;
 
         if (Physics.Raycast(playerCamera.transform.position, playerCamera.transform.forward, out hit, pickupRange))
         {
@@ -114,29 +151,34 @@ public class PickupAndInspect : MonoBehaviour
             else if (tag == "canPickUp" || tag == "Battery" || tag == "Matches" || tag == "StudyKey")
             {
                 currentHitObj = hit.transform.gameObject;
-                isReadable = false;
+                isPickupable = true;
             }
         }
 
+        // Update UI panels based on what we're looking at
         if (currentHitObj != null)
         {
             if (isReadable)
             {
+                // Show "R to Read" hint
                 if (pickupHintPanel != null) pickupHintPanel.SetActive(false);
                 if (readHintPanel != null) readHintPanel.SetActive(true);
             }
-            else
+            else if (isPickupable)
             {
+                // Show "E to Pick Up" hint
                 if (pickupHintPanel != null) pickupHintPanel.SetActive(true);
                 if (readHintPanel != null) readHintPanel.SetActive(false);
             }
         }
         else
         {
+            // Hide all hints
             if (pickupHintPanel != null) pickupHintPanel.SetActive(false);
             if (readHintPanel != null) readHintPanel.SetActive(false);
         }
 
+        // Handle highlighting
         if (currentHitObj != highlightedObj)
         {
             ClearHighlight();
@@ -152,8 +194,6 @@ public class PickupAndInspect : MonoBehaviour
     {
         if (highlightedObj != null) RemoveHighlight(highlightedObj);
         highlightedObj = null;
-        if (pickupHintPanel != null) pickupHintPanel.SetActive(false);
-        if (readHintPanel != null) readHintPanel.SetActive(false);
     }
     #endregion
 
@@ -202,6 +242,7 @@ public class PickupAndInspect : MonoBehaviour
     {
         if (Keyboard.current.rKey.wasPressedThisFrame)
         {
+            // Close reading if already reading (R to close)
             if (isReading)
             {
                 CloseReading();
@@ -268,6 +309,7 @@ public class PickupAndInspect : MonoBehaviour
     #region Close Reading
     private void HandleCloseReading()
     {
+        // Close with Escape key
         if (isReading && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
             CloseReading();
@@ -276,17 +318,180 @@ public class PickupAndInspect : MonoBehaviour
 
     private void CloseReading()
     {
-        isReading = false;
+        // Hide appropriate UI based on what we were reading
+        if (isReadingJournal)
+        {
+            if (JournalUI.Instance != null)
+                JournalUI.Instance.HideJournal();
+        }
+        else if (isReadingOccultBook)
+        {
+            // Close the OccultBook UI
+            if (currentOccultBook != null)
+            {
+                currentOccultBook.CloseBook();
+            }
+        }
 
+        // Reset reading states
+        isReading = false;
+        isReadingJournal = false;
+        isReadingOccultBook = false;
+        currentOccultBook = null;
+
+        // Check if we just read the final journal/book - trigger camera animation
+        if (justReadFinalJournal && !hasFinalSequencePlayed)
+        {
+            justReadFinalJournal = false;
+            hasFinalSequencePlayed = true;
+            StartCoroutine(PlayFinalJournalCameraSequence());
+            return; // Don't restore controls yet - animation will handle it
+        }
+
+        // Normal close - restore controls
+        RestorePlayerControls();
+    }
+
+    private void RestorePlayerControls()
+    {
         if (playerRotationScript != null) playerRotationScript.enabled = true;
         if (cameraRotationScript != null) cameraRotationScript.enabled = true;
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
         if (crosshairDot != null) crosshairDot.SetActive(true);
+    }
+    #endregion
 
-        if (JournalUI.Instance != null)
-            JournalUI.Instance.HideJournal();
+    #region Final Journal Camera Animation
+    private IEnumerator PlayFinalJournalCameraSequence()
+    {
+
+        tiyanak.SetActive(true);
+
+        if (finalJournalFocusObject == null)
+        {
+            Debug.LogWarning("Final Journal Focus Object not assigned! Skipping camera animation.");
+            RestorePlayerControls();
+            yield break;
+        }
+
+        isCameraAnimating = true;
+
+        // Keep player controls disabled during animation
+        if (playerRotationScript != null) playerRotationScript.enabled = false;
+        if (cameraRotationScript != null) cameraRotationScript.enabled = false;
+
+        // Hide cursor and crosshair during animation
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+        if (crosshairDot != null) crosshairDot.SetActive(false);
+
+        // Store original camera rotation for return
+        originalCameraRotation = playerCamera.transform.rotation;
+
+        // Calculate target rotation to look at the object
+        Vector3 directionToTarget = (finalJournalFocusObject.transform.position - playerCamera.transform.position).normalized;
+        Quaternion targetLookRotation = Quaternion.LookRotation(directionToTarget);
+
+        // Slam the door ONCE before camera animation starts
+        if (studyDoor != null)
+        {
+            studyDoor.DoorSlammed();
+        }
+
+        // === PHASE 1: Camera moves to look at object ===
+        float elapsedTime = 0f;
+        while (elapsedTime < cameraAnimationDuration)
+        {
+            elapsedTime += Time.deltaTime;
+            float t = elapsedTime / cameraAnimationDuration;
+            float curveValue = cameraAnimationCurve.Evaluate(t);
+
+            playerCamera.transform.rotation = Quaternion.Slerp(originalCameraRotation, targetLookRotation, curveValue);
+            yield return null;
+        }
+        playerCamera.transform.rotation = targetLookRotation;
+
+        Debug.Log("Camera focused on object. Starting object animation...");
+
+        // === PHASE 2: Play object animation ===
+        if (focusObjectAnimator != null)
+        {
+            // Trigger the animation
+            focusObjectAnimator.SetTrigger("Play");
+
+            // Wait for animation to finish
+            yield return new WaitForSeconds(0.1f); // Small delay to let animation start
+
+            // Get the current animation clip length
+            AnimatorStateInfo stateInfo = focusObjectAnimator.GetCurrentAnimatorStateInfo(0);
+            float animationLength = stateInfo.length;
+
+            Debug.Log($"Playing object animation for {animationLength} seconds...");
+            yield return new WaitForSeconds(animationLength);
+        }
+        else
+        {
+            Debug.LogWarning("No Animator found on focus object. Skipping animation wait.");
+            yield return new WaitForSeconds(1f); // Default wait if no animator
+        }
+
+        // Fire event after object animation completes
+        onFinalJournalAnimationComplete?.Invoke();
+
+        // === PHASE 3: Disable the object ===
+        finalJournalFocusObject.SetActive(false);
+        Debug.Log("Focus object disabled.");
+
+        // Small delay before camera returns
+        yield return new WaitForSeconds(delayBeforeReturn);
+
+        // === PHASE 4: Camera returns to original position ===
+        Quaternion currentRotation = playerCamera.transform.rotation;
+        elapsedTime = 0f;
+
+        while (elapsedTime < cameraReturnDuration)
+        {
+            elapsedTime += Time.deltaTime;
+            float t = elapsedTime / cameraReturnDuration;
+            float curveValue = cameraAnimationCurve.Evaluate(t);
+
+            playerCamera.transform.rotation = Quaternion.Slerp(currentRotation, originalCameraRotation, curveValue);
+            yield return null;
+        }
+        playerCamera.transform.rotation = originalCameraRotation;
+
+        Debug.Log("Camera returned to original position.");
+
+        isCameraAnimating = false;
+
+        // Fire return complete event
+        onCameraReturnComplete?.Invoke();
+
+        // Restore player controls
+        RestorePlayerControls();
+    }
+
+    /// <summary>
+    /// Call this to manually trigger the focus object animation (for testing)
+    /// </summary>
+    public void TriggerFinalJournalSequence()
+    {
+        if (!hasFinalSequencePlayed)
+        {
+            hasFinalSequencePlayed = true;
+            StartCoroutine(PlayFinalJournalCameraSequence());
+        }
+    }
+
+    /// <summary>
+    /// Reset the final sequence so it can play again (for testing)
+    /// </summary>
+    public void ResetFinalSequence()
+    {
+        hasFinalSequencePlayed = false;
+        justReadFinalJournal = false;
     }
     #endregion
 
@@ -309,8 +514,16 @@ public class PickupAndInspect : MonoBehaviour
             }
         }
 
-        // Enter reading mode and show journal
+        // Check if this is the final journal - flag for camera animation
+        if (journal.journalID == "ReadFinalJournal")
+        {
+            justReadFinalJournal = true;
+        }
+
+        // Enter reading mode
         EnterReadingMode();
+        isReadingJournal = true;
+        isReadingOccultBook = false;
 
         JournalUI.Instance.ShowJournal(
             journal.journalTitle,
@@ -350,6 +563,20 @@ public class PickupAndInspect : MonoBehaviour
             }
         }
 
+        // Check if this occult book should trigger final sequence
+        // You can change "ReadFinalOccultBook" to whatever bookID you want
+        if (occultBook.bookID == "ReadFinalJournal" || occultBook.bookID == "ReadFinalOccultBook")
+        {
+            justReadFinalJournal = true;
+        }
+
+        // Enter reading mode
+        EnterReadingMode();
+        isReadingJournal = false;
+        isReadingOccultBook = true;
+        currentOccultBook = occultBook;
+
+        // Show the book content
         occultBook.TryReadBook();
         Debug.Log("Reading occult book...");
     }
