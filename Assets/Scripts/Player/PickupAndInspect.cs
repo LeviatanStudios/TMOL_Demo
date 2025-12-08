@@ -367,8 +367,6 @@ public class PickupAndInspect : MonoBehaviour
     private IEnumerator PlayFinalJournalCameraSequence()
     {
 
-        tiyanak.SetActive(true);
-
         if (finalJournalFocusObject == null)
         {
             Debug.LogWarning("Final Journal Focus Object not assigned! Skipping camera animation.");
@@ -399,7 +397,7 @@ public class PickupAndInspect : MonoBehaviour
         {
             studyDoor.DoorSlammed();
         }
-
+        tiyanak.SetActive(true);
         // === PHASE 1: Camera moves to look at object ===
         float elapsedTime = 0f;
         while (elapsedTime < cameraAnimationDuration)
@@ -461,7 +459,7 @@ public class PickupAndInspect : MonoBehaviour
             yield return null;
         }
         playerCamera.transform.rotation = originalCameraRotation;
-
+        tiyanak.SetActive(false);
         Debug.Log("Camera returned to original position.");
 
         isCameraAnimating = false;

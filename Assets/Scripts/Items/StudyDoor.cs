@@ -6,6 +6,10 @@ public class StudyDoor : MonoBehaviour
 {
     [Header("References")]
     public TaskManager taskManager;
+    public GameObject tiyanakObject;
+    [SerializeField] PlayerMovement playerMovement;
+    public GameObject creditsPanel;
+    public GameObject taskListPanel;
 
     [Header("Door Settings")]
     public float openAngle = 90f;
@@ -16,6 +20,7 @@ public class StudyDoor : MonoBehaviour
     public string unlockTaskName = "UnlockStudy";
     public string requiredTaskID1 = "ReadFinalJournal";
     public string requiredTaskID2 = "UnlockStudy";
+    
 
     [Header("Audio")]
     [SerializeField] private AudioSource doorOpenAudioSource;
@@ -50,6 +55,14 @@ public class StudyDoor : MonoBehaviour
         if (Keyboard.current.eKey.wasPressedThisFrame)
         {
             TryInteract();
+            if (taskManager.IsCurrentTask("Run"))
+            {
+                JumspScare();
+                taskManager.CompleteTask("Run");
+                creditsPanel.SetActive(true);
+                taskListPanel.SetActive(false);
+                Debug.Log("LastSceneTrigger");
+            }
         }
     }
 
@@ -137,6 +150,7 @@ public class StudyDoor : MonoBehaviour
         {
             if (doorCloseAudioSource != null)
                 doorCloseAudioSource.PlayDelayed(closeDelay);
+
         }
 
         while (Quaternion.Angle(transform.rotation, targetRotation) > 0.1f)
@@ -159,6 +173,16 @@ public class StudyDoor : MonoBehaviour
     {
         StartCoroutine(AnimateDoor());
     }
+
+    private void JumspScare()
+    {
+        // Freeze player
+        playerMovement.enabled = false;
+
+        tiyanakObject.SetActive(true);
+    }
+
+    
 
     public static bool PlayerHasKey => playerHasKey;
 }

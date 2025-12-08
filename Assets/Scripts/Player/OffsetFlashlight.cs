@@ -11,6 +11,8 @@ public class OffsetFlashlight : MonoBehaviour
     public TextMeshProUGUI WarningText;
     public TaskManager taskManager;
     public PlayerMovement playerMovement; // Add this reference
+    [SerializeField] public GameObject hukomObject;
+    [SerializeField] public AudioSource playerAudioSource;
 
     [Header("Battery Settings")]
     public int maxBatteries = 100;
@@ -79,7 +81,10 @@ public class OffsetFlashlight : MonoBehaviour
 
                     // Unfreeze player
                     if (playerMovement != null)
+                    {
                         playerMovement.UnfreezePlayer();
+                        hukomObject.SetActive(true);
+                    }
 
                     Debug.Log("Tutorial complete - Player unfrozen!");
                 }

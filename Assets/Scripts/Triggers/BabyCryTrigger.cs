@@ -12,6 +12,7 @@ public class BabyCryTrigger : MonoBehaviour
     {
         if (taskManager.IsCurrentTask("UnlockStudy") && !isTrigger)
         {
+           
             audioSource.PlayOneShot(clip);
             isTrigger = true;
         }

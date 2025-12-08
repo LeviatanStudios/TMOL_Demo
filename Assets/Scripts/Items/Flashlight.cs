@@ -6,6 +6,7 @@ public class Flashlight : MonoBehaviour
     [Header("References")]
     public GameObject flashlight;          // Flashlight object
     public TMP_Text tutorialText;          // TextMeshProUGUI reference
+    [SerializeField] public AudioSource playerAudioSource;
 
     private bool flashlightUsed = false;
 
@@ -28,6 +29,7 @@ public class Flashlight : MonoBehaviour
 
             if (!flashlightUsed)
             {
+                playerAudioSource.Play();
                 flashlightUsed = true;
                 tutorialText.text = "Explore the Mansion.";
             }
