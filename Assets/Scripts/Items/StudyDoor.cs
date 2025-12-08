@@ -10,6 +10,9 @@ public class StudyDoor : MonoBehaviour
     [SerializeField] PlayerMovement playerMovement;
     public GameObject creditsPanel;
     public GameObject taskListPanel;
+    public GameObject batteryPanel;
+    [SerializeField] private GameObject playerDialogue;
+    [SerializeField] private GameObject player;
 
     [Header("Door Settings")]
     public float openAngle = 90f;
@@ -20,7 +23,11 @@ public class StudyDoor : MonoBehaviour
     public string unlockTaskName = "UnlockStudy";
     public string requiredTaskID1 = "ReadFinalJournal";
     public string requiredTaskID2 = "UnlockStudy";
-    
+
+    [Header("Jumpscare Settings")]
+    [SerializeField] private Camera playerCamera;
+    [SerializeField] private Camera menuCamera;
+    [SerializeField] private float jumpscareDelay = 3f;
 
     [Header("Audio")]
     [SerializeField] private AudioSource doorOpenAudioSource;
@@ -39,8 +46,6 @@ public class StudyDoor : MonoBehaviour
     private Quaternion _openRotation;
     private Coroutine _currentCoroutine;
 
-
-
     void Start()
     {
         if (taskManager == null)
@@ -55,26 +60,26 @@ public class StudyDoor : MonoBehaviour
         if (Keyboard.current.eKey.wasPressedThisFrame)
         {
             TryInteract();
-            if (taskManager.IsCurrentTask("Run"))
-            {
-                JumspScare();
-                taskManager.CompleteTask("Run");
-                creditsPanel.SetActive(true);
-                taskListPanel.SetActive(false);
-                Debug.Log("LastSceneTrigger");
-            }
         }
     }
 
     void TryInteract()
     {
-        GameObject player = GameObject.FindGameObjectWithTag("Player");
-        if (player == null) return;
+        GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
+        if (playerObj == null) return;
 
-        float distance = Vector3.Distance(transform.position, player.transform.position);
+        float distance = Vector3.Distance(transform.position, playerObj.transform.position);
         if (distance > interactRange) return;
 
-        // Check if current task is ReadFinalJournal OR UnlockStudy
+        // Check for jumpscare trigger (must be near door)
+        if (taskManager.IsCurrentTask("Run"))
+        {
+            StartCoroutine(JumpscareSequence());
+            taskManager.CompleteTask("Run");
+            Debug.Log("LastSceneTrigger");
+            return; // Don't process normal door interaction
+        }
+
         bool canInteract = taskManager.IsCurrentTask(requiredTaskID1) ||
                            taskManager.IsCurrentTask(requiredTaskID2);
 
@@ -137,7 +142,6 @@ public class StudyDoor : MonoBehaviour
         isOpen = !isOpen;
         Quaternion targetRotation = isOpen ? _openRotation : _closedRotation;
 
-        // Stop any currently playing door audio
         if (doorOpenAudioSource != null) doorOpenAudioSource.Stop();
         if (doorCloseAudioSource != null) doorCloseAudioSource.Stop();
 
@@ -150,7 +154,6 @@ public class StudyDoor : MonoBehaviour
         {
             if (doorCloseAudioSource != null)
                 doorCloseAudioSource.PlayDelayed(closeDelay);
-
         }
 
         while (Quaternion.Angle(transform.rotation, targetRotation) > 0.1f)
@@ -174,15 +177,38 @@ public class StudyDoor : MonoBehaviour
         StartCoroutine(AnimateDoor());
     }
 
-    private void JumspScare()
+    private IEnumerator JumpscareSequence()
     {
-        // Freeze player
+
+        taskListPanel.SetActive(false);
+        batteryPanel.SetActive(false);
+
+        // Freeze player and show tiyanak
         playerMovement.enabled = false;
-
         tiyanakObject.SetActive(true);
-    }
 
-    
+      
+
+        // Wait for jumpscare duration
+        yield return new WaitForSeconds(jumpscareDelay);
+
+        // Switch cameras
+        if (playerCamera != null)
+            playerCamera.gameObject.SetActive(false);
+
+        if (menuCamera != null)
+            menuCamera.gameObject.SetActive(true);
+
+        // Show cursor for credits menu
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        // Hide tiyanak and show credits
+        tiyanakObject.SetActive(false);
+       
+        player.SetActive(false);
+        creditsPanel.SetActive(true);
+    }
 
     public static bool PlayerHasKey => playerHasKey;
 }

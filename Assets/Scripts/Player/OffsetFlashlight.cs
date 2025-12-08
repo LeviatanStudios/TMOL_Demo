@@ -1,7 +1,9 @@
-﻿using UnityEngine;
-using UnityEngine.InputSystem;
+﻿using System.Collections;
 using TMPro;
-using System.Collections;
+using Unity.VisualScripting;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using static UnityEngine.Rendering.DebugUI.Table;
 
 public class OffsetFlashlight : MonoBehaviour
 {
@@ -10,14 +12,9 @@ public class OffsetFlashlight : MonoBehaviour
     public Light Flashlight;
     public TextMeshProUGUI WarningText;
     public TaskManager taskManager;
-    public PlayerMovement playerMovement; // Add this reference
+    public PlayerMovement playerMovement;
     [SerializeField] public GameObject hukomObject;
     [SerializeField] public AudioSource playerAudioSource;
-
-    [Header("Battery Settings")]
-    public int maxBatteries = 100;
-    public int currentBatteries;
-    public float batteryDrainRate = 1f;
 
     [Header("Audio")]
     public AudioSource Source;
@@ -25,24 +22,32 @@ public class OffsetFlashlight : MonoBehaviour
     public AudioClip FlashLight_OffSound;
     public AudioClip NoBatterySound;
     public AudioClip BatteryPickupSound;
+    public AudioClip BatteryLoadSound; // Optional: sound when loading battery
 
     private bool FlashLightIsOn = false;
     private bool firstTimeFlashlightOn = false;
     private bool firstTimePickupBattery = false;
-    private float drainTimer = 0f;
+
+    private BatteryManager batteryManager;
 
     void Start()
     {
-        currentBatteries = 0;
         Flashlight.enabled = false;
         FlashLightIsOn = false;
 
         if (WarningText != null)
             WarningText.text = "";
 
-        // Find PlayerMovement if not assigned
         if (playerMovement == null)
             playerMovement = FindFirstObjectByType<PlayerMovement>();
+
+        // Get BatteryManager reference
+        batteryManager = BatteryManager.Instance;
+
+        if (batteryManager != null)
+        {
+            batteryManager.OnBatteryDepleted.AddListener(OnBatteryDepleted);
+        }
     }
 
     void Update()
@@ -52,90 +57,141 @@ public class OffsetFlashlight : MonoBehaviour
 
         if (Keyboard.current.fKey.wasPressedThisFrame)
             ToggleFlashlight();
-
-        if (FlashLightIsOn && currentBatteries > 0)
-            HandleBatteryDrain();
     }
 
     void ToggleFlashlight()
     {
         if (!FlashLightIsOn)
         {
-            if (currentBatteries > 0)
+            // Check if we have battery loaded
+            bool hasBatteryLoaded = batteryManager != null && batteryManager.CurrentBattery > 0;
+
+            if (hasBatteryLoaded)
             {
-                Flashlight.enabled = true;
-                FlashLightIsOn = true;
-                drainTimer = 0f;
-                Source.PlayOneShot(FlashLight_OnSound);
+                // Battery is loaded, turn on flashlight
+                TurnOnFlashlight();
             }
             else
             {
-                // First time pressing F with no battery - complete tutorial task and unfreeze
-                if (!firstTimeFlashlightOn)
+                // No battery loaded, check if we have spare batteries
+                bool hasSpareBattery = batteryManager != null && batteryManager.HasSpareBattery();
+
+                if (hasSpareBattery)
                 {
-                    firstTimeFlashlightOn = true;
+                    // Load a spare battery and turn on
+                    batteryManager.LoadBattery();
 
-                    // Complete task
-                    if (taskManager != null)
-                        taskManager.CompleteTask("Flashlight");
+                    if (BatteryLoadSound != null)
+                        Source.PlayOneShot(BatteryLoadSound);
 
-                    // Unfreeze player
-                    if (playerMovement != null)
-                    {
-                        playerMovement.UnfreezePlayer();
-                        hukomObject.SetActive(true);
-                    }
-
-                    Debug.Log("Tutorial complete - Player unfrozen!");
+                    ShowWarning("Battery loaded!");
+                    TurnOnFlashlight();
                 }
-
-                Source.PlayOneShot(NoBatterySound);
-                ShowWarning("No batteries!");
+                else
+                {
+                    // No batteries at all
+                    HandleNoBattery();
+                }
             }
         }
         else
         {
-            Flashlight.enabled = false;
-            FlashLightIsOn = false;
-            drainTimer = 0f;
-            Source.PlayOneShot(FlashLight_OffSound);
+            TurnOffFlashlight();
         }
     }
 
-    void HandleBatteryDrain()
+    void TurnOnFlashlight()
     {
-        drainTimer += Time.deltaTime * batteryDrainRate;
+        Flashlight.enabled = true;
+        FlashLightIsOn = true;
+        Source.PlayOneShot(FlashLight_OnSound);
 
-        if (drainTimer >= 1f)
+        if (batteryManager != null)
+            batteryManager.SetFlashlightState(true);
+    }
+
+    void TurnOffFlashlight()
+    {
+        Flashlight.enabled = false;
+        FlashLightIsOn = false;
+        Source.PlayOneShot(FlashLight_OffSound);
+
+        if (batteryManager != null)
+            batteryManager.SetFlashlightState(false);
+    }
+
+    void HandleNoBattery()
+    {
+        // First time pressing F with no battery - complete tutorial task and unfreeze
+        if (!firstTimeFlashlightOn)
         {
-            currentBatteries--;
-            drainTimer = 0f;
+            firstTimeFlashlightOn = true;
 
-            if (currentBatteries <= 0)
+            if (taskManager != null)
+                taskManager.CompleteTask("Flashlight");
+
+            if (playerMovement != null)
             {
-                currentBatteries = 0;
-                FlashLightIsOn = false;
+                playerMovement.UnfreezePlayer();
+                if (hukomObject != null)
+                    hukomObject.SetActive(true);
+            }
+
+            Debug.Log("Tutorial complete - Player unfrozen!");
+        }
+
+        Source.PlayOneShot(NoBatterySound);
+        ShowWarning("No batteries!");
+    }
+
+    // Called by BatteryManager when battery runs out
+    private void OnBatteryDepleted()
+    {
+        if (FlashLightIsOn)
+        {
+            // Try to auto-load a spare battery
+            if (batteryManager != null && batteryManager.HasSpareBattery())
+            {
+                batteryManager.LoadBattery();
+                ShowWarning("Auto-loaded spare battery!");
+
+                if (BatteryLoadSound != null)
+                    Source.PlayOneShot(BatteryLoadSound);
+            }
+            else
+            {
+                // No spare batteries, turn off flashlight
                 Flashlight.enabled = false;
-                drainTimer = 0f;
+                FlashLightIsOn = false;
                 Source.PlayOneShot(NoBatterySound);
                 ShowWarning("Flashlight ran out of battery!");
+
+                if (batteryManager != null)
+                    batteryManager.SetFlashlightState(false);
             }
         }
     }
 
+    // Called when picking up batteries
     public void AddBattery(int amount)
     {
-        currentBatteries += amount;
-        if (currentBatteries > maxBatteries)
-            currentBatteries = maxBatteries;
-
-        Source.PlayOneShot(BatteryPickupSound);
-        ShowWarning($"Battery collected! ({currentBatteries}/{maxBatteries})");
-
-        if (!firstTimePickupBattery && taskManager != null)
+        if (batteryManager != null)
         {
-            taskManager.CompleteTask("CollectBattery");
-            firstTimePickupBattery = true;
+            if (batteryManager.AddBattery())
+            {
+                Source.PlayOneShot(BatteryPickupSound);
+                ShowWarning($"Battery collected! ({batteryManager.SpareBatteries}/{batteryManager.MaxBatteries})");
+
+                if (!firstTimePickupBattery && taskManager != null)
+                {
+                    taskManager.CompleteTask("CollectBattery");
+                    firstTimePickupBattery = true;
+                }
+            }
+            else
+            {
+                ShowWarning("Can't carry more batteries!");
+            }
         }
     }
 
@@ -151,5 +207,13 @@ public class OffsetFlashlight : MonoBehaviour
     {
         yield return new WaitForSeconds(seconds);
         WarningText.text = "";
+    }
+
+    private void OnDestroy()
+    {
+        if (batteryManager != null)
+        {
+            batteryManager.OnBatteryDepleted.RemoveListener(OnBatteryDepleted);
+        }
     }
 }

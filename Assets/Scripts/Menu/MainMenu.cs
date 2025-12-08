@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 using System.Collections;
 
 public class MainMenu : MonoBehaviour
@@ -8,6 +9,8 @@ public class MainMenu : MonoBehaviour
     [SerializeField] private GameObject settingsPanel;
     [SerializeField] private GameObject InGamePanel;
     [SerializeField] private GameObject JournalPanel;
+    [SerializeField] private GameObject BatteryPanel;
+    [SerializeField] private GameObject pauseMenuPanel;
 
     [Header("Tutorial")]
     [SerializeField] private GameObject tutorialPanel;
@@ -28,10 +31,12 @@ public class MainMenu : MonoBehaviour
     [SerializeField] private AudioSource menuMusic;
     [SerializeField] private float musicFadeDuration = 1f;
 
-
-    
-
     private bool isTransitioning = false;
+    private bool isGameStarted = false;
+    private bool isPaused = false;
+    private bool settingsOpenedFromPause = false; // Track where settings was opened from
+
+    public bool IsPaused => isPaused;
 
     private void Start()
     {
@@ -41,6 +46,32 @@ public class MainMenu : MonoBehaviour
         {
             fadePanel.alpha = 1f;
             StartCoroutine(Fade(1f, 0f));
+        }
+
+        if (pauseMenuPanel != null)
+            pauseMenuPanel.SetActive(false);
+    }
+
+    private void Update()
+    {
+        if (isGameStarted && !isTransitioning)
+        {
+            if (Keyboard.current.escapeKey.wasPressedThisFrame)
+            {
+                // If settings is open, close it first
+                if (settingsPanel != null && settingsPanel.activeSelf)
+                {
+                    CloseSettings();
+                }
+                else if (isPaused)
+                {
+                    ResumeGame();
+                }
+                else
+                {
+                    PauseGame();
+                }
+            }
         }
     }
 
@@ -57,7 +88,11 @@ public class MainMenu : MonoBehaviour
 
         player.SetActive(false);
 
-        // Play menu music
+        isGameStarted = false;
+        isPaused = false;
+        settingsOpenedFromPause = false;
+        Time.timeScale = 1f;
+
         PlayMenuMusic();
     }
 
@@ -86,7 +121,7 @@ public class MainMenu : MonoBehaviour
 
         while (timer < musicFadeDuration)
         {
-            timer += Time.deltaTime;
+            timer += Time.unscaledDeltaTime;
             menuMusic.volume = Mathf.Lerp(startVolume, 0f, timer / musicFadeDuration);
             yield return null;
         }
@@ -97,7 +132,7 @@ public class MainMenu : MonoBehaviour
 
     public void PlayGame()
     {
-        Debug.Log("Button Play Game Cleck");
+        Debug.Log("Button Play Game Click");
         if (isTransitioning) return;
         PlayButtonSound();
         StartCoroutine(StartGame());
@@ -107,7 +142,6 @@ public class MainMenu : MonoBehaviour
     {
         isTransitioning = true;
 
-        // Fade out music
         StopMenuMusic();
 
         if (fadePanel != null)
@@ -132,24 +166,160 @@ public class MainMenu : MonoBehaviour
         }
 
         isTransitioning = false;
+        isGameStarted = true;
+
         InGamePanel.SetActive(true);
+        BatteryPanel.SetActive(true);
         JournalPanel.SetActive(true);
         tutorialPanel.SetActive(true);
     }
 
+    #region Pause Menu
+    public void PauseGame()
+    {
+        if (!isGameStarted || isTransitioning) return;
+
+        isPaused = true;
+        Time.timeScale = 0f;
+
+        if (pauseMenuPanel != null)
+            pauseMenuPanel.SetActive(true);
+
+        if (InGamePanel != null)
+            InGamePanel.SetActive(false);
+        if (BatteryPanel != null)
+            BatteryPanel.SetActive(false);
+        if (tutorialPanel != null)
+            tutorialPanel.SetActive(false);
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        Debug.Log("Game Paused");
+    }
+
+    public void ResumeGame()
+    {
+        if (!isPaused) return;
+
+        PlayButtonSound();
+
+        isPaused = false;
+        Time.timeScale = 1f;
+
+        if (pauseMenuPanel != null)
+            pauseMenuPanel.SetActive(false);
+        if (settingsPanel != null)
+            settingsPanel.SetActive(false);
+
+        if (InGamePanel != null)
+            InGamePanel.SetActive(true);
+        if (BatteryPanel != null)
+            BatteryPanel.SetActive(true);
+        if (tutorialPanel != null)
+            tutorialPanel.SetActive(true);
+
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+
+        Debug.Log("Game Resumed");
+    }
+
+    public void QuitToMainMenu()
+    {
+        if (isTransitioning) return;
+        PlayButtonSound();
+        StartCoroutine(BackToMenuFromPause());
+    }
+
+    private IEnumerator BackToMenuFromPause()
+    {
+        isTransitioning = true;
+
+        Time.timeScale = 1f;
+
+        if (fadePanel != null)
+        {
+            yield return StartCoroutine(Fade(0f, 1f));
+        }
+
+        if (pauseMenuPanel != null)
+            pauseMenuPanel.SetActive(false);
+        if (settingsPanel != null)
+            settingsPanel.SetActive(false);
+        if (InGamePanel != null)
+            InGamePanel.SetActive(false);
+        if (BatteryPanel != null)
+            BatteryPanel.SetActive(false);
+        if (JournalPanel != null)
+            JournalPanel.SetActive(false);
+        if (tutorialPanel != null)
+            tutorialPanel.SetActive(false);
+
+        ShowMenu();
+
+        if (fadePanel != null)
+        {
+            yield return StartCoroutine(Fade(1f, 0f));
+        }
+
+        isTransitioning = false;
+    }
+    #endregion
+
+    #region Settings
+    // Called from Main Menu Settings button
     public void OpenSettings()
     {
         PlayButtonSound();
-        mainMenuPanel.SetActive(false);
-        settingsPanel.SetActive(true);
+        settingsOpenedFromPause = false; // Opened from Main Menu
+
+        if (mainMenuPanel != null)
+            mainMenuPanel.SetActive(false);
+        if (settingsPanel != null)
+            settingsPanel.SetActive(true);
+
+        Debug.Log("Settings opened from Main Menu");
     }
 
+    // Called from Pause Menu Settings button
+    public void OpenSettingsFromPause()
+    {
+        PlayButtonSound();
+        settingsOpenedFromPause = true; // Opened from Pause Menu
+
+        if (pauseMenuPanel != null)
+            pauseMenuPanel.SetActive(false);
+        if (settingsPanel != null)
+            settingsPanel.SetActive(true);
+
+        Debug.Log("Settings opened from Pause Menu");
+    }
+
+    // Called from Settings Back button
     public void CloseSettings()
     {
         PlayButtonSound();
-        settingsPanel.SetActive(false);
-        mainMenuPanel.SetActive(true);
+
+        if (settingsPanel != null)
+            settingsPanel.SetActive(false);
+
+        if (settingsOpenedFromPause)
+        {
+            // Return to Pause Menu
+            if (pauseMenuPanel != null)
+                pauseMenuPanel.SetActive(true);
+            Debug.Log("Returning to Pause Menu");
+        }
+        else
+        {
+            // Return to Main Menu
+            if (mainMenuPanel != null)
+                mainMenuPanel.SetActive(true);
+            Debug.Log("Returning to Main Menu");
+        }
     }
+    #endregion
 
     public void QuitGame()
     {
@@ -162,6 +332,8 @@ public class MainMenu : MonoBehaviour
     {
         isTransitioning = true;
 
+        Time.timeScale = 1f;
+
         StopMenuMusic();
 
         if (fadePanel != null)
@@ -172,7 +344,7 @@ public class MainMenu : MonoBehaviour
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
 #else
-            Application.Quit();
+        Application.Quit();
 #endif
     }
 
@@ -183,7 +355,7 @@ public class MainMenu : MonoBehaviour
 
         while (timer < fadeDuration)
         {
-            timer += Time.deltaTime;
+            timer += Time.unscaledDeltaTime;
             fadePanel.alpha = Mathf.Lerp(from, to, timer / fadeDuration);
             yield return null;
         }

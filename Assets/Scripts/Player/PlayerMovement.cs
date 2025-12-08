@@ -14,26 +14,37 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float jumpForce = 5f;
 
     [Header("Camera Settings")]
-    [SerializeField] private float sensitivity = 10f;
+    [SerializeField] private float defaultSensitivity = 10f;
 
     private Vector3 movementInput;
     private float xRot;
     private bool isSprinting;
 
     // Freeze system
-    private bool isFrozen = true; // Start frozen
+    private bool isFrozen = true;
     public bool IsFrozen => isFrozen;
+
+    // Current sensitivity
+    private float sensitivity;
 
     private void Start()
     {
-        sensitivity = PlayerPrefs.GetFloat("Sensitivity", 10f);
+        LoadSensitivity();
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+    }
+
+    private void LoadSensitivity()
+    {
+        sensitivity = PlayerPrefs.GetFloat("Sensitivity", defaultSensitivity);
     }
 
     private void Update()
     {
         if (Keyboard.current == null || Mouse.current == null) return;
+
+        // Update sensitivity from Settings (in case it changed)
+        sensitivity = Settings.MouseSensitivity;
 
         // Still allow looking around when frozen
         HandleMouseLook();
@@ -64,6 +75,7 @@ public class PlayerMovement : MonoBehaviour
 
         xRot -= mouseY;
         xRot = Mathf.Clamp(xRot, -90f, 90f);
+
         playerCamera.localRotation = Quaternion.Euler(xRot, 0f, 0f);
         transform.Rotate(Vector3.up * mouseX);
     }
@@ -98,18 +110,22 @@ public class PlayerMovement : MonoBehaviour
         return Physics.Raycast(transform.position, Vector3.down, 0.25f);
     }
 
-    // Call this to unfreeze player
     public void UnfreezePlayer()
     {
         isFrozen = false;
         Debug.Log("Player unfrozen!");
     }
 
-    // Call this to freeze player
     public void FreezePlayer()
     {
         isFrozen = true;
         movementInput = Vector3.zero;
         Debug.Log("Player frozen!");
+    }
+
+    // Call this when settings change (optional - for immediate update)
+    public void RefreshSensitivity()
+    {
+        sensitivity = Settings.MouseSensitivity;
     }
 }
