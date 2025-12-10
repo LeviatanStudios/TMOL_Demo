@@ -103,4 +103,4 @@ public class BatteryUI : MonoBehaviour
             batteryManager.OnSpareBatteriesChanged.RemoveListener(UpdateSpareBatteryUI);
         }
     }
-}
+} 
