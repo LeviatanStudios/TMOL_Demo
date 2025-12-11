@@ -39,7 +39,7 @@ public class TaskManager : MonoBehaviour
 
         if (currentTask != null)
         {
-            tutorialManager?.ShowPersistent(currentTask.tutorialMessage);
+            tutorialManager?.ShowPersistent("Task: \n" + currentTask.tutorialMessage);
             Debug.Log($"Current task: {currentTask.taskName}");
         }
         else
